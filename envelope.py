@@ -1,33 +1,57 @@
 #!/usr/bin/python
 
-import cairo
+from pypdf import PdfWriter, PdfReader
 import csv
+import io
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
+FONT_NAME=None
+FONT_PATH=None
+if FONT_NAME is not None and FONT_PATH is not None:
+    pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_PATH))
+TO_FONT_SIZE=12
+FROM_FONT_SIZE=8
 
+ENVELOPE = (7.25*inch, 5.25*inch)
 INCHES_TO_POINTS = 72
 
 def write_envelopes(out, from_addr, to_addrs):
-    surface = cairo.PDFSurface(out,
-                               7.25 * INCHES_TO_POINTS,
-                               5.25 * INCHES_TO_POINTS)
-    cr = cairo.Context(surface)
-    cr.select_font_face('serif')
-
+    output = PdfWriter()
+    
     MARGIN = 0.25
     for to_addr in to_addrs:
+        packet = io.BytesIO()
+
+        can = canvas.Canvas(packet, pagesize=ENVELOPE)
+        if FONT_NAME is not None:
+            can.setFont(FONT_NAME)
+        can.setFontSize(FROM_FONT_SIZE)
         for i, line in enumerate(from_addr):
-            cr.move_to(MARGIN * INCHES_TO_POINTS,
-                       (MARGIN * INCHES_TO_POINTS) + 12 + (12 * i))
-            cr.show_text(line)
-
+            
+            can.drawString(MARGIN * INCHES_TO_POINTS, ENVELOPE[1]-((MARGIN * INCHES_TO_POINTS) + 12 + (12 * i)), line)
+      
+        can.setFontSize(TO_FONT_SIZE)
         for i, line in enumerate(to_addr):
-            cr.move_to(2.5 * INCHES_TO_POINTS,
-                       (2.25 * INCHES_TO_POINTS) + 12 + (12 * i))
-            cr.show_text(line)
-        cr.show_page()
+            can.drawString(2.5 * INCHES_TO_POINTS, ENVELOPE[1]-((2.5 * INCHES_TO_POINTS) + 12 + (12 * i)), line)
+            
+            
+        can.save()
+        #move to the beginning of the StringIO buffer
+        packet.seek(0)
+        address_pdf = PdfReader(packet)
+            
+        address_page = address_pdf.pages[0]
+        output.add_page(address_page)
 
-    surface.flush()
-    surface.finish()
+    # finally, write "output" to a real file
+    print(f"writing to {out}")
+    output.write(out)
+    
+     
+        
 
 
 def load_csv(filename):
@@ -51,8 +75,13 @@ if __name__ == '__main__':
     FROM_ADDR = ('Evan + Meena',
                  '[elided]',
                  'San Francisco, CA 94110')
-    INFILE = 'address.csv'
+    INFILE = None#'address.csv'
     OUTFILE = 'out.pdf'
-    with open(OUTFILE, 'w') as f:
-        write_envelopes(f, FROM_ADDR, list(load_csv(INFILE)))
-    print 'wrote %s.' % OUTFILE
+
+    if INFILE is None:
+        addresses=[FROM_ADDR]
+    else:
+        addresses=load_csv(INFILE)
+    
+    write_envelopes(OUTFILE, FROM_ADDR, addresses)
+    print(f'wrote {OUTFILE}')
